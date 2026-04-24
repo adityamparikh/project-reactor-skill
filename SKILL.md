@@ -19,7 +19,9 @@ description: |
   Hooks.onOperatorDebug, ReactorDebugAgent, BlockHound); and deciding when to prefer
   virtual threads over Reactor. Also triggers on: reactive streams, hot vs cold publisher,
   marble diagrams, operator fusion, onNext/onError/onComplete signals, reactive security,
-  WebFlux, R2DBC, reactor-netty, BlockHound, StepVerifier.
+  WebFlux, R2DBC, reactor-netty, BlockHound, StepVerifier, Sinks, Sinks.One, Sinks.Many,
+  EmitterProcessor, FluxProcessor, MonoProcessor, programmatic emission, EmitResult,
+  EmitFailureHandler, tryEmitNext, sink.asFlux.
 ---
 
 # Project Reactor Skill
@@ -140,6 +142,8 @@ When selecting or explaining an operator, always cover: what it does to the sequ
 **`expand`** — performs breadth-first traversal. Each element produces more elements via the provided function; the stream ends when all produced publishers complete empty.
 
 See `references/operators.md` for the full catalog with marble diagram descriptions.
+
+For **programmatic signal emission** — pushing signals into a pipeline from outside it (bridging callbacks, building hot event streams, request-reply patterns) — use `Sinks`. This is the modern replacement for the deprecated `EmitterProcessor`, `FluxProcessor`, and `MonoProcessor`. See `references/sinks.md`.
 
 ## Section E: Paradigm Translation (Imperative to Reactive)
 
