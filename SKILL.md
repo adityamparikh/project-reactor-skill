@@ -1,6 +1,6 @@
 ---
 name: project-reactor
-description: |
+description: >
   Expert guide for Project Reactor (reactor-core 3.6+, BOM 2024.0+). Use this skill
   whenever the user is writing, reviewing, debugging, or reasoning about reactive code
   involving Mono, Flux, Publisher, Subscriber, or reactive pipelines. Triggers on:
