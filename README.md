@@ -43,38 +43,24 @@ The skill activates in the following scenarios:
 
 ## Installation
 
-### Claude Code (Recommended)
+Clone the skill into your Claude Code skills directory:
 
 ```bash
-claude skills install https://github.com/adityaparikh/project-reactor-skill
+git clone https://github.com/adityamparikh/project-reactor-skill.git ~/.claude/skills/project-reactor
 ```
 
-### Manual Installation
-
-1. Clone this repository:
-
-```bash
-git clone https://github.com/adityaparikh/project-reactor-skill.git
-```
-
-2. Copy or symlink the `project-reactor` directory into your Claude Code skills folder:
-
-```bash
-# macOS/Linux
-mkdir -p ~/.claude/plugins/skills
-cp -r project-reactor-skill/project-reactor ~/.claude/plugins/skills/
-```
-
-Or add the repository as a plugin source in Claude Code settings.
+Claude Code will pick up the skill on the next session.
 
 ## Target Library Versions
 
-- Reactor Core: 3.6.x
-- Spring Boot BOM: 2024.0.x (Reactor 2024.0 release train)
+- Reactor Core: 3.6.x (Reactor 2024.0 release train)
+- Spring Boot: 3.4.x or 4.0.x
 - R2DBC: 1.0.x
 - BlockHound: 1.0.9.x
 - Kotlin: 1.9+
 
+> Versions above are illustrative — verify against current upstream releases when applying examples.
+
 ## License
 
-MIT License
+Apache License 2.0 — see [LICENSE](LICENSE).

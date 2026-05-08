@@ -185,12 +185,13 @@ Mono<User> lazy = Mono.fromFuture(() -> asyncClient.getUser(id));
 ### Reactive to blocking (at composition roots only)
 
 ```java
-// Only acceptable at the edge of the application: main(), CLI tools, or tests
+// Only acceptable at the edge of the application: main() of a CLI/script, or
+// integration test setup where a synchronous fixture is genuinely required.
 User user = userMono.block();
 List<Order> orders = orderFlux.collectList().block();
 ```
 
-Never call `.block()` inside a reactive chain or inside a controller method that returns `Mono`/`Flux`. Use BlockHound (Section J) to catch accidental blocking in CI.
+Never call `.block()` inside a reactive chain or inside a controller method that returns `Mono`/`Flux`. In tests, drive assertions with `StepVerifier` rather than `.block()` (see Section I). Use BlockHound (Section J) to catch accidental blocking in CI.
 
 See `references/bridging.md` for full patterns including Spring `@Async` interop and MVC+WebFlux coexistence.
 
@@ -267,7 +268,7 @@ Flux<Order> orders = orderRepository.findByUserId(userId);
 ### Key considerations
 
 - **Connection pool sizing**: R2DBC pool defaults are conservative. Tune `initialSize`, `maxSize`, and `maxIdleTime` in `ConnectionPoolConfiguration`.
-- **Transaction boundaries**: Use `TransactionalOperator` to wrap a reactive chain in a transaction. Do not use `@Transactional` with reactive return types unless Spring Data R2DBC's support is confirmed for your version.
+- **Transaction boundaries**: With a reactive `R2dbcTransactionManager` configured (the default when Spring Data R2DBC is on the classpath), `@Transactional` on a method returning `Mono`/`Flux` works — Spring propagates the transaction through the Reactor Context. For programmatic control, use `TransactionalOperator`. Do not block inside a reactive transaction. See `references/r2dbc-patterns.md` for declarative vs programmatic examples.
 - **N+1 queries**: Reactive repositories do not join automatically. Fetch related data with explicit `flatMap` + a second query, or write a join in `DatabaseClient`.
 
 ```java
