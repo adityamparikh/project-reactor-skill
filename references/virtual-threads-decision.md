@@ -1,6 +1,12 @@
 # Virtual Threads vs. Project Reactor: Decision Guide
 
-Both Project Reactor and virtual threads (JDK 21+) solve concurrent I/O. The right choice depends on your context.
+Both Project Reactor and virtual threads (introduced in Java 21 LTS, refined
+through Java 25 LTS) solve concurrent I/O. The right choice depends on your
+context.
+
+> Java baseline for this skill: minimum **Java 17**, recommended **Java 25 LTS**.
+> Supported versions: 17, 21, 25. Virtual threads require Java 21+; new code
+> should target Java 25 LTS where possible.
 
 ## Decision Tree
 
@@ -8,9 +14,9 @@ Both Project Reactor and virtual threads (JDK 21+) solve concurrent I/O. The rig
 Is this new greenfield code or migration?
 ├── Migration from existing blocking code?
 │   ├── Team knows reactive? → Migrate to Reactor (for full benefits)
-│   └── Team is imperative-first? → Virtual threads (lower risk)
+│   └── Team is imperative-first? → Virtual threads (lower risk; Java 21+, prefer Java 25 LTS)
 │
-├── New greenfield code
+├── New greenfield code (target Java 25 LTS where possible)
 │   ├── Needs streaming / SSE / WebSocket?         → Reactor (Flux)
 │   ├── Needs fine-grained backpressure control?   → Reactor
 │   ├── Complex async fan-out with composition?    → Reactor
@@ -18,8 +24,9 @@ Is this new greenfield code or migration?
 │   ├── Batch processing, file I/O?                → Virtual threads
 │   └── Event-driven with Kafka/messaging?         → Reactor (or both)
 │
-└── JDK < 21?
-    └── Must use Reactor (or other reactive lib) for async I/O
+└── Stuck on Java 17 (oldest supported) or older?
+    └── Must use Reactor (or other reactive lib) for async I/O — virtual threads
+        are unavailable until Java 21
 ```
 
 ## When Reactor Is the Right Tool
@@ -34,7 +41,7 @@ Is this new greenfield code or migration?
 ## When Virtual Threads Are Simpler
 
 - **Simple request-response CRUD**: read from DB, transform, return — no streaming needed
-- **JDK 21+ available** and team finds reactive model hard to reason about
+- **Java 21+ available** (Java 25 LTS preferred) and team finds reactive model hard to reason about
 - **Existing blocking code** that works correctly — virtual threads make it scale without a rewrite
 - **Testing**: blocking/imperative tests are simpler than `StepVerifier`
 - **Debugging**: stack traces make sense; no assembly trace complexity
@@ -48,11 +55,11 @@ Is this new greenfield code or migration?
 @GetMapping("/users/{id}")
 Mono<User> getUser(@PathVariable String id) {
     return Mono.fromCallable(() -> userService.findById(id))  // sync service
-               .subscribeOn(Schedulers.boundedElastic());     // or virtual thread executor
+               .subscribeOn(Schedulers.boundedElastic());     // or virtual thread executor (Java 21+)
 }
 ```
 
-**"Virtual threads everywhere, Reactor for streaming"**:
+**"Virtual threads everywhere, Reactor for streaming"** (Java 21+; Java 25 LTS recommended):
 ```yaml
 # Spring Boot 3.2+
 spring.threads.virtual.enabled: true  # enables virtual threads for Tomcat/Jetty
@@ -73,8 +80,8 @@ Flux<Event> stream() {
 3. Migrate inward (services, repositories) gradually
 4. Use BlockHound to detect remaining blocking calls in reactive chains
 
-**From Reactor to virtual threads:**
-1. Replace `WebClient` with `RestClient` or `HttpClient` (JDK 11+)
+**From Reactor to virtual threads (requires Java 21+; Java 25 LTS recommended):**
+1. Replace `WebClient` with `RestClient` or `HttpClient` (`java.net.http`, available since Java 11)
 2. Replace R2DBC with JDBC/JPA — simpler, more tooling
 3. Replace `StepVerifier` tests with standard JUnit assertions
 4. Keep WebFlux for SSE/streaming if needed
@@ -89,7 +96,7 @@ Flux<Event> stream() {
 
 ## Spring Boot Context
 
-| Spring Boot 3.x Feature | Reactor             | Virtual Threads         |
+| Spring Boot 3.x Feature | Reactor             | Virtual Threads (Java 21+, prefer Java 25 LTS) |
 |--------------------------|---------------------|-------------------------|
 | Web layer                | Spring WebFlux      | Spring MVC + virtual threads |
 | DB access                | R2DBC               | JDBC/JPA                |

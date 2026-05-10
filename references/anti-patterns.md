@@ -2,6 +2,8 @@
 
 Common mistakes and how to avoid them. Each section shows a **BAD** example (what not to do) and a **GOOD** replacement with an explanation of the consequences.
 
+> Examples assume Java 17 (minimum), 21, or 25 (recommended LTS). Virtual-thread snippets require Java 21+ and are most ergonomic on Java 25.
+
 ---
 
 ## 1. Nested `subscribe()` (Fire-and-Forget Inside a Chain)
@@ -63,7 +65,7 @@ Flux.range(1, 100)
     .subscribe();
 ```
 
-**Virtual threads alternative (Java 21+):**
+**Virtual threads alternative (Java 21+; Java 25 LTS recommended):**
 ```java
 Flux.range(1, 100)
     .flatMap(i ->
@@ -276,9 +278,10 @@ String format(String s) {
 Mono<String> result = Mono.just(input).map(this::format);
 ```
 
-**GOOD — if the whole flow can be sync, consider virtual threads instead:**
+**GOOD — if the whole flow can be sync, consider virtual threads instead (Java 21+; Java 25 LTS recommended):**
 ```java
-// Java 21+: structured concurrency may be cleaner than reactive for fully-sync services
+// Structured concurrency (preview in 21, stabilizing through 25) may be cleaner
+// than reactive for fully-sync services.
 try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
     var future = scope.fork(() -> blockingService.call());
     scope.join().throwIfFailed();

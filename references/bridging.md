@@ -4,6 +4,11 @@ Reactor pipelines are non-blocking by design. Introducing blocking calls without
 causes thread starvation and, in the worst case, deadlocks. This document covers every
 common bridging pattern and when to use each one.
 
+> Java baseline: examples target Java 17 (minimum), 21, or 25. **Java 25 LTS is
+> recommended** for new code. Virtual-thread sections require Java 21+ — that is
+> when `Thread.ofVirtual` and `Executors.newVirtualThreadPerTaskExecutor` shipped —
+> and benefit from continued refinements through Java 25.
+
 ---
 
 ## 1. Wrapping Blocking Calls → Reactive
@@ -103,10 +108,11 @@ Flux<User> ok = idFlux.flatMap(id ->
 
 ---
 
-## 3. Virtual Thread Considerations (JDK 21+)
+## 3. Virtual Thread Considerations (Java 21+; Java 25 LTS recommended)
 
-With virtual threads, blocking a thread no longer pins an OS carrier thread, so the
-no-blocking rule relaxes **only on virtual-thread schedulers**. However:
+With virtual threads (introduced in Java 21, refined through 25), blocking a thread
+no longer pins an OS carrier thread, so the no-blocking rule relaxes **only on
+virtual-thread schedulers**. However:
 
 - `Schedulers.parallel()` / `Schedulers.single()` still use platform threads — blocking
   is still forbidden there.
@@ -116,8 +122,10 @@ no-blocking rule relaxes **only on virtual-thread schedulers**. However:
   threads — keep that code synchronous and let the framework handle concurrency.
 - Use Reactor for **streaming / backpressure** needs, not merely for concurrency,
   because virtual threads already cover that.
-- Wrap `Executors.newVirtualThreadPerTaskExecutor()` with `Schedulers.fromExecutorService`
-  if you must use it inside a Reactor chain, and configure `ContextPropagation` explicitly.
+- Wrap `Executors.newVirtualThreadPerTaskExecutor()` (Java 21+) with
+  `Schedulers.fromExecutorService` if you must use it inside a Reactor chain, and
+  configure `ContextPropagation` explicitly. On Java 25 LTS this is the recommended
+  path for new code that needs occasional virtual-thread offload from a reactive pipeline.
 
 See `virtual-threads-decision.md` for a full decision matrix.
 
@@ -161,7 +169,8 @@ the controller to WebFlux (`Mono`/`Flux` return types) rather than blocking ever
 ### BlockingExecutionConfigurer (Spring 6.1+ / Boot 3.2+)
 
 Register an executor for WebFlux controllers that must block; Spring dispatches to it
-automatically for non-reactive return types.
+automatically for non-reactive return types. Pair with virtual threads on Java 21+
+(Java 25 LTS recommended) for cheap blocking offload.
 
 ```java
 @Override

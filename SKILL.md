@@ -1,9 +1,11 @@
 ---
 name: project-reactor
-description: Expert guidance for Project Reactor (reactor-core 3.6+, BOM 2024.0+) on the JVM. Triggers when the user writes, reviews, or debugs reactive code involving Mono, Flux, Publisher, Subscriber, Sinks, or reactive pipelines: operator selection (flatMap, concatMap, switchMap, switchIfEmpty, handle, expand, zip, merge, cache, share, replay), Schedulers and threading (publishOn, subscribeOn, boundedElastic, parallel), backpressure (onBackpressureBuffer/Drop/Latest, limitRate, prefetch), Reactor Context and tracing/MDC/security propagation, blocking-to-reactive bridging (fromCallable, fromFuture, BlockHound), Kotlin coroutine/Flow interop, Spring WebFlux, R2DBC, reactor-netty WebClient, StepVerifier/TestPublisher/PublisherProbe/virtual time, debugging (checkpoint, log, Hooks.onOperatorDebug, ReactorDebugAgent), and choosing between Reactor and JDK 21 virtual threads. Does not apply to non-reactive Spring MVC or plain JDBC/imperative code unless they bridge into a reactive pipeline.
+description: Expert guidance for Project Reactor (reactor-core 3.6+, BOM 2024.0+) on the JVM (Java 17, 21, or 25; Java 25 LTS recommended). Triggers when the user writes, reviews, or debugs reactive code involving Mono, Flux, Publisher, Subscriber, Sinks, or reactive pipelines: operator selection (flatMap, concatMap, switchMap, switchIfEmpty, handle, expand, zip, merge, cache, share, replay), Schedulers and threading (publishOn, subscribeOn, boundedElastic, parallel), backpressure (onBackpressureBuffer/Drop/Latest, limitRate, prefetch), Reactor Context and tracing/MDC/security propagation, blocking-to-reactive bridging (fromCallable, fromFuture, BlockHound), Kotlin coroutine/Flow interop, Spring WebFlux, R2DBC, reactor-netty WebClient, StepVerifier/TestPublisher/PublisherProbe/virtual time, debugging (checkpoint, log, Hooks.onOperatorDebug, ReactorDebugAgent), and choosing between Reactor and JDK virtual threads (introduced in Java 21, refined through 25). Does not apply to non-reactive Spring MVC or plain JDBC/imperative code unless they bridge into a reactive pipeline.
 ---
 
 # Project Reactor Skill
+
+> Java baseline: **Java 17 minimum** (oldest supported), **Java 25 LTS recommended** for new code. Supported versions: 17, 21, 25. Virtual-thread guidance assumes Java 21+ (where `Thread.ofVirtual` first shipped) and is most ergonomic on Java 25.
 
 ## Section A: Assess the Situation
 
@@ -25,7 +27,7 @@ Identify the mode, then jump to the relevant section:
 - Producer-to-consumer backpressure must be enforced
 - Building a fully async pipeline where no step may block
 
-**Prefer virtual threads (JDK 21+) when:**
+**Prefer virtual threads (Java 21+, ideally Java 25 LTS) when:**
 - Simple CRUD with blocking JDBC/I/O and no streaming
 - Team is unfamiliar with reactive; learning curve isn't justified
 - Existing imperative codebase with high migration cost
