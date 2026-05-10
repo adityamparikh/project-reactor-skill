@@ -1,119 +1,93 @@
 ---
 name: project-reactor
-description: >
-  Expert guide for Project Reactor (reactor-core 3.6+, BOM 2024.0+). Use this skill
-  whenever the user is writing, reviewing, debugging, or reasoning about reactive code
-  involving Mono, Flux, Publisher, Subscriber, or reactive pipelines. Triggers on:
-  operator selection (flatMap, switchIfEmpty, concatMap, switchMap, zipWith, mergeWith,
-  combineLatest, handle, expand, cache, share, replay); scheduler and threading questions
-  (publishOn, subscribeOn, Schedulers.boundedElastic, Schedulers.parallel, parallel Flux,
-  thread-safety); backpressure (onBackpressureBuffer, limitRate, prefetch); context
-  propagation (Reactor Context, MDC bridging, Micrometer tracing, Spring Security
-  ReactiveSecurityContextHolder); blocking-to-reactive and reactive-to-blocking bridging
-  (Mono.fromCallable, Mono.fromFuture, block(), BlockHound, @Async interop, MVC+WebFlux);
-  Kotlin coroutine/Flow interop (awaitSingle, mono{}, flux{}, asFlow, asFlux); R2DBC
-  reactive database patterns (DatabaseClient, R2dbcEntityTemplate, reactive repositories,
-  R2DBC transactions); reactor-netty HTTP client (WebClient, connection pooling, retry
-  with backoff, timeouts); testing reactive code (StepVerifier, TestPublisher,
-  PublisherProbe, virtual time, WebTestClient); debugging (checkpoint, log,
-  Hooks.onOperatorDebug, ReactorDebugAgent, BlockHound); and deciding when to prefer
-  virtual threads over Reactor. Also triggers on: reactive streams, hot vs cold publisher,
-  marble diagrams, operator fusion, onNext/onError/onComplete signals, reactive security,
-  WebFlux, R2DBC, reactor-netty, BlockHound, StepVerifier, Sinks, Sinks.One, Sinks.Many,
-  EmitterProcessor, FluxProcessor, MonoProcessor, programmatic emission, EmitResult,
-  EmitFailureHandler, tryEmitNext, sink.asFlux.
+description: Expert guidance for Project Reactor (reactor-core 3.6+, BOM 2024.0+) on the JVM. Triggers when the user writes, reviews, or debugs reactive code involving Mono, Flux, Publisher, Subscriber, Sinks, or reactive pipelines: operator selection (flatMap, concatMap, switchMap, switchIfEmpty, handle, expand, zip, merge, cache, share, replay), Schedulers and threading (publishOn, subscribeOn, boundedElastic, parallel), backpressure (onBackpressureBuffer/Drop/Latest, limitRate, prefetch), Reactor Context and tracing/MDC/security propagation, blocking-to-reactive bridging (fromCallable, fromFuture, BlockHound), Kotlin coroutine/Flow interop, Spring WebFlux, R2DBC, reactor-netty WebClient, StepVerifier/TestPublisher/PublisherProbe/virtual time, debugging (checkpoint, log, Hooks.onOperatorDebug, ReactorDebugAgent), and choosing between Reactor and JDK 21 virtual threads. Does not apply to non-reactive Spring MVC or plain JDBC/imperative code unless they bridge into a reactive pipeline.
 ---
 
 # Project Reactor Skill
 
 ## Section A: Assess the Situation
 
-Before diving in, identify which mode applies:
+Identify the mode, then jump to the relevant section:
 
-- **Writing new reactive code?** Start with Section B to confirm Reactor is the right choice, then Section D for operator guidance.
-- **Reviewing existing code?** Go directly to Section C — work through the full checklist, not just the reported concern.
-- **Debugging a problem?** Go to Section J first. Debugging reactive code requires specific tooling before you can reason about what went wrong.
-- **Deciding whether to adopt Reactor?** Section B is your decision tree.
-- **Translating imperative code to reactive (or back)?** Section E has side-by-side examples.
-- **Kotlin project?** Check Section F before writing any interop code.
+- **Writing new reactive code?** Section B (is Reactor right?), then Section D (operators).
+- **Reviewing existing code?** Section C — work the full checklist, not just the reported concern.
+- **Debugging?** Section J first. Reactive debugging needs specific tooling before reasoning about behavior.
+- **Adoption decision?** Section B and `references/virtual-threads-decision.md`.
+- **Imperative ↔ reactive translation?** Section E and `references/bridging.md`.
+- **Kotlin?** Section F before any interop code.
 
-## Section B: Should I Use Reactor Here?
-
-Reactor is a tool, not an ideology. Make the choice deliberately.
+## Section B: Should Reactor Be Used Here?
 
 **Use Reactor when:**
-- I/O-bound fan-out with backpressure control is needed (e.g., calling 10 downstream services per request)
-- Streaming data over SSE, WebSocket, or chunked HTTP responses
+- I/O-bound fan-out with backpressure control (e.g., calling 10 downstream services per request)
+- Streaming over SSE, WebSocket, or chunked HTTP
 - Many concurrent async operations where thread-per-request doesn't scale
-- Back-pressure from producer to consumer must be enforced
+- Producer-to-consumer backpressure must be enforced
 - Building a fully async pipeline where no step may block
 
-**Consider virtual threads (JDK 21+) instead when:**
+**Prefer virtual threads (JDK 21+) when:**
 - Simple CRUD with blocking JDBC/I/O and no streaming
 - Team is unfamiliar with reactive; learning curve isn't justified
-- Existing codebase is imperative and the migration cost is high
-- No streaming or backpressure requirements exist
-- You're on Spring Boot 3.2+ — virtual threads are one config line
+- Existing imperative codebase with high migration cost
+- No streaming or backpressure requirements
+- On Spring Boot 3.2+ — virtual threads are one config line
 
-**Mixed case:** Use reactive at the transport layer (WebFlux + WebClient), but let individual service methods be synchronous or run on virtual threads internally. The boundary is clean.
+**Mixed case:** reactive at the transport layer (WebFlux + WebClient), synchronous or virtual-thread internals at the service boundary.
 
-> "Reactor is a tool. If virtual threads solve the problem cleanly, use them."
-
-See `references/virtual-threads-decision.md` for the full decision tree.
+Full decision tree: `references/virtual-threads-decision.md`.
 
 ## Section C: Code Review Checklist
 
-When reviewing reactive code, check **all** of these — not just the specific concern raised. Issues compound across these dimensions.
+Check **all** of these — issues compound across dimensions.
 
 ### 1. Anti-patterns
 - Nested `subscribe()` inside another `subscribe()` or inside an operator callback — breaks error propagation and backpressure
 - Blocking calls (`Thread.sleep`, JDBC, blocking HTTP) inside a reactive chain on a non-`boundedElastic` thread
-- Ignoring the returned `Mono`/`Flux` (calling a method and discarding the publisher without subscribing)
+- Discarding the returned `Mono`/`Flux` (no subscriber)
 - Shared mutable state mutated in `doOnNext`/`map` without synchronization
 
-See `references/anti-patterns.md` for the full catalog.
+Catalog: `references/anti-patterns.md`.
 
 ### 2. Scheduler usage
-- Is `publishOn` used to shift execution to the correct pool after the chain is assembled?
-- Is `subscribeOn` used to shift where subscription starts (I/O sources)?
-- Is all blocking I/O wrapped in `Mono.fromCallable(...)` and executed on `Schedulers.boundedElastic()`?
+- `publishOn` to shift execution after assembly; `subscribeOn` to shift where subscription starts (I/O sources)
+- All blocking I/O wrapped in `Mono.fromCallable(...)` on `Schedulers.boundedElastic()`
 
-See `references/schedulers-and-threading.md`.
+Details: `references/schedulers-and-threading.md`.
 
 ### 3. Backpressure
-- Is overflow handled with `onBackpressureBuffer`, `onBackpressureDrop`, or `onBackpressureLatest`?
-- Are `prefetch` values tuned for the workload (`flatMap(fn, concurrency, prefetch)`)?
+- Overflow handled with `onBackpressureBuffer`, `onBackpressureDrop`, or `onBackpressureLatest`
+- `prefetch` tuned for the workload (`flatMap(fn, concurrency, prefetch)`)
 
-See `references/backpressure.md`.
+Details: `references/backpressure.md`.
 
 ### 4. Context propagation
-- Is Reactor `Context` used (not `ThreadLocal`) for MDC/tracing/security values across operators?
-- Is `ReactorContextAccessor` registered for Micrometer tracing?
-- Is `ReactiveSecurityContextHolder` used (not `SecurityContextHolder`) in WebFlux?
+- Reactor `Context` (not `ThreadLocal`) for MDC/tracing/security across operators
+- `ReactorContextAccessor` registered for Micrometer tracing
+- `ReactiveSecurityContextHolder` (not `SecurityContextHolder`) in WebFlux
 
-See `references/context-propagation.md`.
+Details: `references/context-propagation.md`.
 
 ### 5. Error handling
-- Are errors surfaced, not silently swallowed?
-- `doOnError` is for side effects (logging) only — it does not recover. Use `onErrorResume` or `onErrorReturn` to handle errors.
-- `onErrorResume` that re-emits the same error is a no-op and hides intent.
+- Errors surfaced, not silently swallowed
+- `doOnError` is for side effects only; recover with `onErrorResume` / `onErrorReturn`
+- `onErrorResume` that re-emits the same error is a no-op and hides intent
 
 ### 6. Resource cleanup
-- Files, connections, and locks opened inside a reactive chain must be closed with `Flux.using()` or `doFinally()`.
-- Never rely on GC for resource cleanup in a reactive pipeline.
+- Files, connections, locks closed via `Flux.using()` or `doFinally()`
+- Never rely on GC for resource cleanup in a reactive pipeline
 
 ### 7. Test coverage
-- Is `StepVerifier` used? (Never `block()` in tests.)
-- Are error paths tested, not just happy paths?
-- Are time-based operators (`delay`, `interval`) tested with virtual time?
+- `StepVerifier` everywhere; never `block()` in tests
+- Error paths tested, not just happy paths
+- Time-based operators (`delay`, `interval`) tested with virtual time
 
-See `references/testing.md`.
+Details: `references/testing.md`.
 
 ## Section D: Operator Guidance
 
-When selecting or explaining an operator, always cover: what it does to the sequence (marble behavior), why this operator vs alternatives, and any threading or backpressure implications.
+When recommending an operator, cover: marble behavior, why it beats alternatives, threading and backpressure implications.
 
-### Core selection guide
+### Selection guide
 
 | Goal | Operator | Why not the others |
 |---|---|---|
@@ -123,77 +97,33 @@ When selecting or explaining an operator, always cover: what it does to the sequ
 | Mono → Flux (one item produces a stream) | `flatMapMany` | `flatMap` returns `Flux<Flux<T>>` without this |
 | Default value / 404 handling | `switchIfEmpty` | `defaultIfEmpty` only works for scalar values |
 | Map + filter in one pass | `handle` | Cleaner than chaining `map` + `filter` |
-| Recursive / tree traversal | `expand` | No clean alternative in the operator set |
+| Recursive / tree traversal | `expand` | No clean alternative |
 
-### Key operator behaviors
+Key behaviors to remember:
 
-**`flatMap`** — subscribes to all inner publishers concurrently up to `concurrency` limit. Results arrive as inner publishers complete, so order is not preserved. Default concurrency is `Queues.SMALL_BUFFER_SIZE` (256). Use `flatMap(fn, maxConcurrency)` to limit.
+- **`flatMap`** — concurrent, unordered; default concurrency 256 (`Queues.SMALL_BUFFER_SIZE`); use `flatMap(fn, maxConcurrency)` to cap.
+- **`concatMap`** — sequential, ordered; next inner waits for previous to complete.
+- **`switchMap`** — cancels current inner on each new upstream signal.
+- **`switchIfEmpty`** — fallback subscribed only on empty completion; cold (not eager).
+- **`cache` / `share` / `replay`** — cold→hot conversion: `cache()` replays all, `share()` multicasts to current subscribers, `replay(n)` replays last `n`.
+- **`handle`** — `(value, sink)` callback; emit, error, or skip — more expressive than `map` + `filter`.
+- **`expand`** — breadth-first traversal; ends when produced publishers complete empty.
 
-**`concatMap`** — subscribes to inner publishers one at a time. Inner must complete before the next starts. Order is preserved. Use when operations must not overlap (database writes, rate-limited APIs with serial requirement).
+Full catalog with marble descriptions: `references/operators.md`.
 
-**`switchMap`** — on each upstream signal, cancels the current inner publisher and subscribes to a new one. Use for user-driven searches where only the latest request matters.
+For **programmatic emission** (callback bridges, hot streams, request-reply) use `Sinks` — the modern replacement for the deprecated `EmitterProcessor` / `FluxProcessor` / `MonoProcessor`. See `references/sinks.md`.
 
-**`switchIfEmpty`** — the fallback publisher is subscribed to only if the upstream completes without emitting any element. The fallback is cold — it is not evaluated eagerly.
+## Section E: Paradigm Translation
 
-**`cache` / `share` / `replay`** — convert a cold publisher to hot. `cache()` replays all elements to new subscribers. `share()` multicasts to current subscribers only. `replay(n)` replays the last `n` elements. Use when the upstream is expensive and multiple subscribers should share one execution.
+When translating, always show both versions side by side so equivalence is verifiable. Patterns covered in `references/bridging.md`:
 
-**`handle`** — receives each element and a `SynchronousSink`. Call `sink.next(value)` to emit, `sink.error(e)` to fail, or neither to skip the element. More expressive than `map` + `filter`.
+- Imperative null-check + lookup → `switchIfEmpty` + `flatMapMany`
+- Blocking JDBC/HTTP → `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`
+- `CompletableFuture` → `Mono.fromFuture(supplier)` (lazy) vs `Mono.fromFuture(future)` (eager)
+- Reactive → blocking with `.block()` — **only** at composition roots (CLI `main`, integration test fixtures); never in a controller or inside a chain
+- Spring `@Async` interop and MVC + WebFlux coexistence
 
-**`expand`** — performs breadth-first traversal. Each element produces more elements via the provided function; the stream ends when all produced publishers complete empty.
-
-See `references/operators.md` for the full catalog with marble diagram descriptions.
-
-For **programmatic signal emission** — pushing signals into a pipeline from outside it (bridging callbacks, building hot event streams, request-reply patterns) — use `Sinks`. This is the modern replacement for the deprecated `EmitterProcessor`, `FluxProcessor`, and `MonoProcessor`. See `references/sinks.md`.
-
-## Section E: Paradigm Translation (Imperative to Reactive)
-
-Always show both versions side by side so the reader can verify equivalence.
-
-### Imperative to reactive
-
-```java
-// Imperative
-User user = userRepo.findById(id);
-if (user == null) throw new NotFoundException();
-List<Order> orders = orderRepo.findByUserId(user.getId());
-return orders;
-
-// Reactive equivalent
-return userRepo.findById(id)                                          // Mono<User>
-    .switchIfEmpty(Mono.error(new NotFoundException()))
-    .flatMapMany(user -> orderRepo.findByUserId(user.getId()));        // Flux<Order>
-```
-
-### Blocking I/O wrapped reactively
-
-```java
-// Blocking call wrapped safely on boundedElastic
-Mono<User> userMono = Mono.fromCallable(() -> jdbcUserRepo.findById(id))
-    .subscribeOn(Schedulers.boundedElastic());
-```
-
-### CompletableFuture bridging
-
-```java
-// Non-lazy: future starts immediately
-Mono<User> fromFuture = Mono.fromFuture(asyncClient.getUser(id));
-
-// Lazy: future starts on subscription
-Mono<User> lazy = Mono.fromFuture(() -> asyncClient.getUser(id));
-```
-
-### Reactive to blocking (at composition roots only)
-
-```java
-// Only acceptable at the edge of the application: main() of a CLI/script, or
-// integration test setup where a synchronous fixture is genuinely required.
-User user = userMono.block();
-List<Order> orders = orderFlux.collectList().block();
-```
-
-Never call `.block()` inside a reactive chain or inside a controller method that returns `Mono`/`Flux`. In tests, drive assertions with `StepVerifier` rather than `.block()` (see Section I). Use BlockHound (Section J) to catch accidental blocking in CI.
-
-See `references/bridging.md` for full patterns including Spring `@Async` interop and MVC+WebFlux coexistence.
+Drive test assertions with `StepVerifier` (Section I), not `.block()`. Use BlockHound (Section J) to catch accidental blocking in CI.
 
 ## Section F: Kotlin Guidance
 
@@ -201,230 +131,78 @@ When code is Kotlin, evaluate coroutines/Flow before reaching for Reactor direct
 
 **Prefer coroutines/Flow when:**
 - New Kotlin code with no existing Reactor dependency
-- The team knows coroutines better than Reactor operators
+- Team knows coroutines better than Reactor operators
 - Suspend functions and structured concurrency fit the design
 
 **Use Reactor in Kotlin when:**
-- Integrating with Java reactive libraries that expose `Mono`/`Flux`
+- Integrating Java reactive libraries that expose `Mono`/`Flux`
 - Advanced backpressure or operator composition is needed
-- Operators like `expand`, `handle`, or `groupBy` are required
+- Operators like `expand`, `handle`, `groupBy` are required
 
-### Key interop patterns
-
-```kotlin
-// suspend ↔ Mono
-suspend fun getUser(id: String): User =
-    userMono.awaitSingle()             // throws NoSuchElementException if empty
-
-suspend fun getUserOrNull(id: String): User? =
-    userMono.awaitSingleOrNull()       // returns null if empty
-
-// Flux ↔ Flow
-fun getOrders(): Flow<Order> =
-    orderFlux.asFlow()
-
-fun fromFlow(flow: Flow<Order>): Flux<Order> =
-    flow.asFlux()
-
-// Coroutine builder → Mono/Flux
-val result: Mono<User> = mono {
-    userService.findUser(id)           // suspend call inside
-}
-
-val stream: Flux<Event> = flux {
-    for (event in eventChannel) {
-        send(event)                    // emits into Flux
-    }
-}
-```
-
-See `references/kotlin-interop.md` for `awaitFirst`, `awaitFirstOrNull`, `awaitLast`, structured concurrency, and Flow backpressure.
+Interop touchpoints: `awaitSingle` / `awaitSingleOrNull`, `Flux.asFlow()` / `Flow.asFlux()`, `mono { ... }` / `flux { ... }` builders. Full patterns including `awaitFirst`, structured concurrency, and Flow backpressure: `references/kotlin-interop.md`.
 
 ## Section G: Data Access (R2DBC)
 
-### Basic patterns
+API choices:
+- **`DatabaseClient`** — SQL-level control with manual row mapping
+- **`R2dbcEntityTemplate`** — higher-level, type-safe queries
+- **Reactive repositories** — Spring Data interfaces returning `Mono`/`Flux`
 
-```java
-// DatabaseClient — SQL-level control
-Mono<User> user = databaseClient
-    .sql("SELECT * FROM users WHERE id = :id")
-    .bind("id", id)
-    .map(row -> new User(
-        row.get("id", Long.class),
-        row.get("name", String.class)
-    ))
-    .one();
+Things that bite:
+- **Connection pool sizing** — defaults are conservative; tune `initialSize`, `maxSize`, `maxIdleTime` in `ConnectionPoolConfiguration`.
+- **Transactions** — with reactive `R2dbcTransactionManager` (default when Spring Data R2DBC is on the classpath), `@Transactional` on a `Mono`/`Flux` method propagates through Reactor Context. Use `TransactionalOperator` for programmatic control. Never block inside a reactive transaction.
+- **N+1 queries** — reactive repositories don't auto-join; either `flatMap` a second query or write a join in `DatabaseClient`.
 
-// R2dbcEntityTemplate — higher-level, type-safe
-Mono<User> user = template.selectOne(
-    query(where("id").is(id)),
-    User.class
-);
-
-// Reactive repository
-Flux<Order> orders = orderRepository.findByUserId(userId);
-```
-
-### Key considerations
-
-- **Connection pool sizing**: R2DBC pool defaults are conservative. Tune `initialSize`, `maxSize`, and `maxIdleTime` in `ConnectionPoolConfiguration`.
-- **Transaction boundaries**: With a reactive `R2dbcTransactionManager` configured (the default when Spring Data R2DBC is on the classpath), `@Transactional` on a method returning `Mono`/`Flux` works — Spring propagates the transaction through the Reactor Context. For programmatic control, use `TransactionalOperator`. Do not block inside a reactive transaction. See `references/r2dbc-patterns.md` for declarative vs programmatic examples.
-- **N+1 queries**: Reactive repositories do not join automatically. Fetch related data with explicit `flatMap` + a second query, or write a join in `DatabaseClient`.
-
-```java
-// TransactionalOperator usage
-transactionalOperator.transactional(
-    userRepository.save(user)
-        .flatMap(saved -> auditRepository.save(new AuditEntry(saved.getId())))
-).subscribe();
-```
-
-See `references/r2dbc-patterns.md` for connection pooling, reactive transactions, and repository composition patterns.
+Code examples (declarative vs programmatic transactions, pool tuning, repository composition): `references/r2dbc-patterns.md`.
 
 ## Section H: HTTP Client (WebClient / Reactor Netty)
 
-### Production-ready WebClient pattern
+Production WebClient call must include: per-status `onStatus` handlers, `bodyToMono`, `timeout`, and a filtered `retryWhen` with backoff (e.g., `Retry.backoff(3, Duration.ofMillis(100)).filter(ex -> ex instanceof IOException || ex instanceof TimeoutException)`).
 
-```java
-webClient.get()
-    .uri("/api/resource/{id}", id)
-    .retrieve()
-    .onStatus(HttpStatusCode::is4xxClientError,
-        response -> response.bodyToMono(ErrorBody.class)
-                            .map(body -> new ClientException(body.getMessage())))
-    .onStatus(HttpStatusCode::is5xxServerError,
-        response -> Mono.error(new ServerException()))
-    .bodyToMono(Resource.class)
-    .timeout(Duration.ofSeconds(5))
-    .retryWhen(
-        Retry.backoff(3, Duration.ofMillis(100))
-             .maxBackoff(Duration.ofSeconds(2))
-             .filter(ex -> ex instanceof IOException || ex instanceof TimeoutException)
-    );
-```
+Configuration to tune:
+- **Connection pool** — `ReactorClientHttpConnector` with custom `ConnectionProvider` (`maxConnections`, `pendingAcquireMaxCount`, `pendingAcquireTimeout`)
+- **Codecs** — `maxInMemorySize` on `WebClientCodecCustomizer` to avoid `DataBufferLimitException` on large bodies
+- **Metrics** — register `reactor.netty.http.client` meters via Micrometer
 
-### Configuration notes
-
-- **Connection pool**: `ReactorClientHttpConnector` with a custom `ConnectionProvider` — set `maxConnections`, `pendingAcquireMaxCount`, and `pendingAcquireTimeout`.
-- **Codecs**: Configure `maxInMemorySize` on `WebClientCodecCustomizer` to avoid `DataBufferLimitException` on large response bodies.
-- **Metrics**: Register `reactor.netty.http.client` meters via Micrometer for connection pool and request latency visibility.
-
-See `references/reactor-netty-http.md` for netty tuning, codec configuration, and connection pool metrics.
+Full patterns: `references/reactor-netty-http.md`.
 
 ## Section I: Testing
 
-Never use `.block()` in tests. Always use `StepVerifier`.
+Never `.block()` in tests. Always `StepVerifier`. Patterns covered in `references/testing.md`:
 
-### Happy path
-
-```java
-StepVerifier.create(userService.findById("123"))
-    .expectNextMatches(user -> user.getId().equals("123"))
-    .verifyComplete();
-```
-
-### Error path
-
-```java
-StepVerifier.create(userService.findById("missing"))
-    .expectError(NotFoundException.class)
-    .verify();
-```
-
-### Virtual time (for delay/interval)
-
-```java
-StepVerifier.withVirtualTime(() -> Flux.interval(Duration.ofSeconds(1)).take(3))
-    .expectSubscription()
-    .thenAwait(Duration.ofSeconds(3))
-    .expectNextCount(3)
-    .verifyComplete();
-```
-
-### TestPublisher (controlling upstream)
-
-```java
-TestPublisher<String> source = TestPublisher.create();
-StepVerifier.create(myService.process(source.flux()))
-    .then(() -> source.emit("a", "b"))
-    .expectNext("A", "B")
-    .then(source::complete)
-    .verifyComplete();
-```
-
-### PublisherProbe (verifying branch execution)
-
-```java
-PublisherProbe<Void> probe = PublisherProbe.empty();
-// Replace a branch of your pipeline with the probe, then assert:
-probe.assertWasSubscribed();
-probe.assertWasRequested();
-```
-
-See `references/testing.md` for WebTestClient, testing Reactor Context, and testing with security.
+- Happy path: `expectNext` / `expectNextMatches` + `verifyComplete`
+- Error path: `expectError(...).verify()`
+- Time-based operators: `StepVerifier.withVirtualTime(...)` with `thenAwait`
+- Controlling upstream: `TestPublisher` (`emit`, `complete`, `error`)
+- Verifying branch execution: `PublisherProbe` (`assertWasSubscribed`, `assertWasRequested`)
+- HTTP layer: `WebTestClient`
+- Context and security in tests
 
 ## Section J: Debugging
 
-When something is broken, start here before reading code.
+When something breaks, reach for tooling before reading code:
 
-### Step 1: Add `log()` to see signal flow
+1. **`log()`** — logs `onSubscribe`, `request`, `onNext`, `onError`, `onComplete` to SLF4J on the named publisher.
+2. **`checkpoint("description")`** — adds a labeled boundary; appears in assembly traces.
+3. **Assembly tracing** — `Hooks.onOperatorDebug()` in development (significant overhead) or `ReactorDebugAgent.init()` (production-safe via `-javaagent`).
+4. **Read traces bottom-up** — each `*__checkpoint` is a boundary in your code; the error propagated through each on its way out.
+5. **BlockHound** — `BlockHound.install()` in test/dev startup throws `BlockingOperationError` on a blocking call from a non-blocking thread; allowlist JVM/`ClassLoader` false positives via `BlockHound.builder().allowBlockingCallsInside(...)`.
 
-```java
-flux.log("myFlux")   // logs onSubscribe, request, onNext, onError, onComplete to SLF4J
-```
-
-### Step 2: Add `checkpoint()` for meaningful stack traces
-
-```java
-userRepository.findById(id)
-    .checkpoint("finding user by id")
-    .flatMap(user -> orderRepository.findByUserId(user.getId()))
-    .checkpoint("fetching orders for user");
-```
-
-### Step 3: Enable assembly tracing
-
-```java
-// Development only — significant overhead
-Hooks.onOperatorDebug();
-
-// Production-safe alternative (attach at JVM startup with -javaagent)
-ReactorDebugAgent.init();
-```
-
-### Reading assembly traces
-
-```
-Error has been observed at the following site(s):
-    *__checkpoint ⇢ HTTP GET "/api/users" [ExceptionHandlingWebHandler]
-    *__checkpoint ⇢ Handler com.example.UserController#getUser(String) [DispatcherHandler]
-```
-
-Read bottom-up. Each `checkpoint` is a boundary in your code — the error propagated through each one on its way out.
-
-### BlockHound (detecting accidental blocking)
-
-Add `BlockHound.install()` to your test setup or application startup in development. It throws `BlockingOperationError` when a blocking call is detected on a non-blocking thread. Common false positives: `ClassLoader`, JVM internals — allowlist them via `BlockHound.builder().allowBlockingCallsInside(...)`.
-
-See `references/debugging.md` for BlockHound setup, common false positives, and production debugging strategies.
+Setup, false positives, and production strategies: `references/debugging.md`.
 
 ## Always Do / Never Do
 
 ### Always
-
-- When reviewing reactive code, check **all** anti-patterns (Section C), not just the one asked about — issues compound
-- When suggesting an operator, briefly describe its marble diagram behavior before explaining usage
-- When the use case has no backpressure, streaming, or complex async need, proactively suggest virtual threads
-- When working in Kotlin, evaluate whether coroutines/Flow would be more natural before reaching for Reactor operators
-- Show both paradigm versions side by side when translating imperative to reactive (or back)
-- Explain the "why" behind operator choices — why `concatMap` instead of `flatMap`, what the ordering guarantee buys
+- Run the full Section C checklist on a review, not just the reported concern
+- Describe an operator's marble behavior before its usage
+- Suggest virtual threads when the case has no backpressure, streaming, or complex async need
+- In Kotlin, evaluate coroutines/Flow before reaching for Reactor operators
+- Show both paradigm versions side by side when translating
+- Explain the "why" — why `concatMap` over `flatMap`, what ordering buys
 
 ### Never
-
-- Do not recommend Reactor for simple CRUD without justifying the tradeoff over virtual threads
-- Do not suggest `.block()` inside a reactive chain — only at composition roots (main, CLI, test)
-- Do not ignore the threading model when writing or reviewing reactive code
-- Do not write reactive code that silently swallows errors — `doOnError` logging is a side effect, not a recovery; surface errors with `onErrorResume` or `onErrorReturn`
-- Do not use `subscribeOn` to "fix" blocking I/O inside a chain without explaining that `boundedElastic` is correct specifically because it is sized for blocking work, not because it's a magic escape hatch
-
-**Tone**: Reactor is a powerful tool, not an ideology. Be pragmatic. Explain the "why" behind choices. If something simpler works, say so.
+- Recommend Reactor for simple CRUD without comparing to virtual threads
+- Suggest `.block()` inside a reactive chain — only at composition roots
+- Ignore the threading model
+- Allow silent error swallowing — `doOnError` is logging, not recovery
+- Use `subscribeOn` as a generic "fix" for blocking I/O without explaining that `boundedElastic` is sized for blocking work, not a magic escape hatch
